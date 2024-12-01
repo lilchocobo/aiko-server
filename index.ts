@@ -15,7 +15,7 @@ import fetch from 'cross-fetch';
 import { UserProfile } from './models/UserProfile.js';
 import { Filter } from 'bad-words';
 import * as badwordsList from 'badwords-list';
-import routes from './routes/index.ts';
+
 
 // Convert ESM module path to dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -50,8 +50,6 @@ app.use(cors({
 }));
 app.use(express.json());
 
-app.use(routes);
-
 // Configure Socket.IO with CORS
 const io = new Server(httpServer, {
   cors: {
@@ -62,7 +60,6 @@ const io = new Server(httpServer, {
   }
 });
 
-initializeSocket(io);
 
 // Initialize counters
 let likeCount = 0;
@@ -536,7 +533,6 @@ app.get('/balance/token/:walletAddress/:mintAddress', async (req, res) => {
 
 // Add this near the top with other imports
 import { Filter } from 'bad-words';
-import { initializeSocket } from './utils/socket.ts';
 
 // Add these helper functions before the route
 const filter = new Filter();
