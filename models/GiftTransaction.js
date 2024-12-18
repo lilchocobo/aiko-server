@@ -60,11 +60,7 @@ const giftTransactionSchema = new Schema({
   }
 });
 
-// Create indexes
-giftTransactionSchema.index({ senderPublicKey: 1 });
-giftTransactionSchema.index({ recipientAgentId: 1 });
-giftTransactionSchema.index({ createdAt: 1 });
-giftTransactionSchema.index({ txHash: 1 }, { unique: true });
-giftTransactionSchema.index({ readByAgent: 1 });
+// Only create compound indexes or special indexes here
+// Removed duplicate index definitions
 
 export const GiftTransaction = model('GiftTransaction', giftTransactionSchema); 

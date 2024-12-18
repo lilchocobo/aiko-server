@@ -8,7 +8,6 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import StreamingStatusSchema from './models/StreamingStatus.js';
 import AudioResponse from './models/AudioResponse.js';
-import { GiftTransaction } from './models/GiftTransaction.js';
 import { Connection, PublicKey, Transaction } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress, createAssociatedTokenAccountInstruction, createTransferInstruction } from '@solana/spl-token';
 import fetch from 'cross-fetch';
@@ -337,144 +336,6 @@ httpServer.listen(PORT, () => {
   console.log('Accepting connections from all origins');
 });
 
-
-// Get all gifts for a specific agent with optional pagination
-app.get('/api/agents/:agentId/gifts', async (req, res) => {
-  try {
-    const { agentId } = req.params;
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 10;
-    const readByAgent = req.query.readByAgent === 'true';
-    const skip = (page - 1) * limit;
-
-    // Create filter object
-    const filter = {
-      recipientAgentId: agentId,
-      ...(req.query.readByAgent !== undefined && { readByAgent })
-    };
-
-    const [gifts, total] = await Promise.all([
-      GiftTransaction.find(filter)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit),
-      GiftTransaction.countDocuments(filter)
-    ]);
-
-    res.json({
-      gifts,
-      pagination: {
-        currentPage: page,
-        totalPages: Math.ceil(total / limit),
-        totalGifts: total,
-        hasMore: skip + gifts.length < total
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching agent gifts:', error);
-    res.status(500).json({ error: 'Failed to fetch agent gifts' });
-  }
-});
-
-// Add a new endpoint to mark gifts as read
-app.put('/api/agents/:agentId/gifts/mark-read', async (req, res) => {
-  try {
-    const { agentId } = req.params;
-    const { giftIds } = req.body;
-
-    if (!Array.isArray(giftIds)) {
-      return res.status(400).json({ error: 'giftIds must be an array' });
-    }
-
-    const result = await GiftTransaction.updateMany(
-      {
-        recipientAgentId: agentId,
-        _id: { $in: giftIds }
-      },
-      {
-        $set: { readByAgent: true }
-      }
-    );
-
-    res.json({
-      success: true,
-      modifiedCount: result.modifiedCount
-    });
-  } catch (error) {
-    console.error('Error marking gifts as read:', error);
-    res.status(500).json({ error: 'Failed to mark gifts as read' });
-  }
-});
-
-// Get top gift senders for a specific agent
-app.get('/api/agents/:agentId/top-gifters', async (req, res) => {
-  try {
-    const { agentId } = req.params;
-    const limit = parseInt(req.query.limit as string) || 10;
-    const timeframe = req.query.timeframe || 'all';
-
-    // Create date filter based on timeframe
-    const dateFilter = {};
-    const now = new Date();
-    if (timeframe === 'day') {
-      dateFilter['createdAt'] = { $gte: new Date(now.setDate(now.getDate() - 1)) };
-    } else if (timeframe === 'week') {
-      dateFilter['createdAt'] = { $gte: new Date(now.setDate(now.getDate() - 7)) };
-    } else if (timeframe === 'month') {
-      dateFilter['createdAt'] = { $gte: new Date(now.setMonth(now.getMonth() - 1)) };
-    }
-
-    const topGifters = await GiftTransaction.aggregate([
-      {
-        $match: {
-          recipientAgentId: agentId,
-          ...dateFilter
-        }
-      },
-      {
-        $group: {
-          _id: '$senderPublicKey',
-          totalGifts: { $sum: '$giftCount' },
-          totalCoins: { $sum: '$coinsTotal' },
-          giftsSent: {
-            $push: {
-              giftName: '$giftName',
-              count: '$giftCount',
-              coins: '$coinsTotal',
-              timestamp: '$createdAt'
-            }
-          }
-        }
-      },
-      {
-        $sort: { totalCoins: -1 }
-      },
-      {
-        $limit: limit
-      }
-    ]);
-
-    // Fetch user profiles for all gifters in parallel
-    const giftersWithProfiles = await Promise.all(
-      topGifters.map(async (gifter) => {
-        const userProfile = await UserProfile.findOne({ publicKey: gifter._id });
-        return {
-          ...gifter,
-          handle: userProfile?.handle || undefined,
-          pfp: userProfile?.pfp || undefined
-        };
-      })
-    );
-
-    res.json({
-      timeframe,
-      topGifters: giftersWithProfiles
-    });
-  } catch (error) {
-    console.error('Error fetching top gifters:', error);
-    res.status(500).json({ error: 'Failed to fetch top gifters' });
-  }
-});
 
 // Add RPC endpoint and connection configuration
 const endpoint = 'https://solana-mainnet.g.alchemy.com/v2/vb8vZOP3L-Y76zj43AyhCmkKm7D6wEsx';
@@ -1408,43 +1269,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('new_gift', async (data) => {
-    console.log('new_gift', data);
-    const { gift, agentId } = data;
-
-    try {
-      // Save the gift transaction to the database
-      const giftTransaction = new GiftTransaction({
-        senderPublicKey: data.senderPublicKey,
-        recipientAgentId: data.recipientAgentId,
-        recipientWallet: data.recipientWallet,
-        giftName: data.giftName,
-        giftCount: data.giftCount,
-        coinsTotal: data.coinsTotal,
-        txHash: data.txHash,
-        handle: data.handle,
-        avatar: data.avatar,
-        pfp: data.pfp
-      });
-
-      await giftTransaction.save();
-
-      // Prepare the enriched gift data for emission
-      const enrichedGiftData = {
-        ...data,
-        txHash: data.txHash,
-        icon: data.icon || gift.icon,
-        timestamp: Date.now(),
-        handle: data.handle || 'Anonymous',
-        avatar: data.avatar || 'default-avatar-url'
-      };
-
-      // Emit the enriched gift event to all clients
-      io.emit(`${data.recipientAgentId}_gift_received`, enrichedGiftData);
-    } catch (error) {
-      console.error('Error handling gift transaction:', error);
-    }
-  });
 
 
   // COMMENTS
