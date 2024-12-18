@@ -1317,7 +1317,7 @@ io.on('connection', (socket) => {
             message: message.content,
             agentId,
             user: 'Daze',
-            handle: '@lofidaze',
+            handle: 'lofidaze',
             avatar: 'http://lofidaze.com/images/dazeselfie.png',
             isAIResponse: true
           });
