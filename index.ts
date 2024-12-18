@@ -532,6 +532,7 @@ app.get('/balance/token/:walletAddress/:mintAddress', async (req, res) => {
 
 // Add this near the top with other imports
 import { Filter } from 'bad-words';
+import { sendMessage } from './utils/directClient.js';
 
 // Add these helper functions before the route
 const filter = new Filter();
@@ -1456,14 +1457,12 @@ io.on('connection', (socket) => {
     try {
       commentCount++;
       
-      // Filter the comment text
       const filteredMessage = filterProfanity(comment.message);
       console.log('filteredMessage', filteredMessage, comment.message);
-
       
       const newComment = new Comment({
         ...comment,
-        message: filteredMessage, // Use filtered message
+        message: filteredMessage,
         agentId,
         avatar: comment.avatar,
         handle: comment.handle
@@ -1474,6 +1473,46 @@ io.on('connection', (socket) => {
       if (agentId) {
         io.emit(`${agentId}_comment_received`, { newComment, commentCount });
       }
+
+      // Send message to AI and handle responses
+      const messages = await sendMessage({
+        text: comment.message,
+        userId: comment.userId,
+        userName: comment.handle
+      });
+
+      // Process each AI response message
+      for (const message of messages) {
+        if (message.role === 'assistant' && message.content) {
+          commentCount++;
+          
+          console.log({message});
+          // Create new comment for AI response with placeholder data
+          const aiComment = new Comment({
+            id: Date.now().toString(),
+            message: message.content,
+            agentId,
+            user: 'Daze',
+            handle: '@lofidaze',
+            avatar: 'http://lofidaze.com/images/dazeselfie.png',
+            isAIResponse: true
+          });
+          
+
+          console.log({aiComment});
+
+          await aiComment.save();
+
+          console.log('saved aiComment');
+          
+          // Emit the AI response as a comment
+          io.emit('comment_received', { newComment: aiComment, commentCount });
+          if (agentId) {
+            io.emit(`${agentId}_comment_received`, { newComment: aiComment, commentCount });
+          }
+        }
+      }
+
     } catch (error) {
       console.error('Error handling new_comment:', error);
     }
