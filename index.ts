@@ -611,6 +611,8 @@ setInterval(() => {
   }
 }, 5000); // Update every 5 seconds
 
+
+
 // Add this function near the top where other state variables are defined
 function getConnectedPeers(): number {
   return io.engine.clientsCount;
@@ -1267,6 +1269,10 @@ io.on('connection', (socket) => {
     } catch (error) {
       console.error('Error handling audio response socket event:', error);
     }
+  });
+
+  socket.on('joined_stream', async (data) => {
+    io.emit('joined_stream', data);
   });
 
 
